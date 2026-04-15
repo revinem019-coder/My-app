@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D City Runner Final</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #87ceeb; touch-action: none; }
+        #ui { 
+            position: absolute; top: 10px; width: 100%; text-align: center; 
+            color: #ffffff; font-family: 'Arial', sans-serif; pointer-events: none;
+            text-shadow: 2px 2px 4px #000;
+        }
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white;
+            font-family: 'Arial', sans-serif; z-index: 100;
+        }
+        .btn-start {
+            padding: 15px 40px; background: #ffcc00; color: black;
+            border: none; border-radius: 10px; font-weight: bold; font-size: 22px;
+            margin-top: 20px; box-shadow: 0 5px 0 #ccaa00;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1 style="font-size: 36px; margin-bottom: 5px;">ROBOT CITY RUN</h1>
+        <p>Kumpulkan koin & hindari mobil!</p>
+        <button class="btn-start" id="btnMulai">MULAI GAME</button>
+    </div>
+
+    <div id="ui">
+        <div id="highScoreText">HIGH SCORE: 0</div>
+        <h1 id="scoreText">Score: 0</h1>
+        <p id="msgSpeed">Speed: 1.0x</p>
+    </div>
+
+<script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
+
+    let isGameStarted = false;
+    let isGameOver = false;
+
+    document.getElementById('btnMulai').addEventListener('click', () => {
+        document.getElementById('start-screen').style.display = 'none';
+        isGameStarted = true;
+    });
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb); 
+    scene.fog = new THREE.Fog(0x87ceeb, 10, 100); 
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(5, 10, 7.5);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+    // JALAN RAYA
+    const roadGroup = new THREE.Group();
+    const roadBase = new THREE.Mesh(
+        new THREE.PlaneGeometry(12, 10000), 
+        new THREE.MeshStandardMaterial({ color: 0x333333 })
+    );
+    roadBase.rotation.x = -Math.PI / 2;
+    roadGroup.add(roadBase);
+
+    for (let i = 0; i < 500; i++) {
+        const line = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+        line.rotation.x = -Math.PI / 2;
+        line.position.set(0, 0.01, -i * 10);
+        roadGroup.add(line);
+    }
+    scene.add(roadGroup);
+
+    // --- PLAYER: ROBOT (DENGAN TANGAN) ---
+    const player = new THREE.Group();
+    const robotMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+    
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.4), robotMat);
+    torso.position.y = 0.75;
+    player.add(torso);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
+    head.position.y = 1.35;
+    player.add(head);
+
+    const legGeo = new THREE.BoxGeometry(0.2, 0.5, 0.2);
+    const leftLeg = new THREE.Mesh(legGeo, robotMat);
+    leftLeg.position.set(-0.2, 0.25, 0);
+    player.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeo, robotMat);
+    rightLeg.position.set(0.2, 0.25, 0);
+    player.add(rightLeg);
+
+    const armGeo = new THREE.BoxGeometry(0.15, 0.5, 0.15);
+    const leftArm = new THREE.Mesh(armGeo, robotMat);
+    leftArm.position.set(-0.45, 0.8, 0);
+    player.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeo, robotMat);
+    rightArm.position.set(0.45, 0.8, 0);
+    player.add(rightArm);
+
+    scene.add(player);
+
+    const lanes = [-3, 0, 3];
+    let currentLane = 1, targetX = 0;
+
+    window.addEventListener('pointerdown', (e) => {
+        if (!isGameStarted) return;
+        if (isGameOver) { location.reload(); return; }
+        if (e.clientX < window.innerWidth / 2) { if (currentLane > 0) currentLane--; } 
+        else { if (currentLane < 2) currentLane++; }
+        targetX = lanes[currentLane];
+    });
+
+    // OBSTACLES: MOBIL DENGAN RODA
+    const obstacles = [];
+    const carColors = [0xff4444, 0x00ff00, 0x4444ff, 0xffffff, 0xff8800];
+
+    function createCar(z) {
+        const car = new THREE.Group();
+        const bodyMat = new THREE.MeshStandardMaterial({ color: carColors[Math.floor(Math.random()*carColors.length)] });
+        
+        // Body Mobil
+        const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.7, 3.5), bodyMat);
+        body.position.y = 0.6;
+        car.add(body);
+        
+        // Atap Mobil
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 1.8), bodyMat);
+        roof.position.y = 1.2;
+        car.add(roof);
+
+        // Roda Sederhana
+        const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.3, 12);
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const wheelPositions = [[-0.9, 0.3, 1.2], [0.9, 0.3, 1.2], [-0.9, 0.3, -1.2], [0.9, 0.3, -1.2]];
+        
+        wheelPositions.forEach(pos => {
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI/2;
+            wheel.position.set(pos[0], pos[1], pos[2]);
+            car.add(wheel);
+        });
+
+        car.position.set(lanes[Math.floor(Math.random()*3)], 0, z);
+        car.userData = { moveSpeed: 0.05 };
+        scene.add(car);
+        obstacles.push(car);
+    }
+
+    const coins = [];
+    for(let i=1; i<=15; i++) {
+        createCar(-i * 30);
+        const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.1, 12), new THREE.MeshStandardMaterial({color: 0xffff00}));
+        coin.rotation.x = Math.PI / 2;
+        coin.position.set(lanes[Math.floor(Math.random()*3)], 0.6, -i * 20 - 5);
+        scene.add(coin);
+        coins.push(coin);
+    }
+
+    let score = 0, highScore = localStorage.getItem("highScore_CityFinal") || 0;
+    document.getElementById('highScoreText').innerText = "HIGH SCORE: " + highScore;
+    
+    // --- SETTING PERCEPATAN ---
+    let runSpeed = 0.15;
+    const acceleration = 0.0001; // Ditingkatkan agar terasa lebih cepat
+    let clock = 0;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (!isGameStarted || isGameOver) { renderer.render(scene, camera); return; }
+
+        // LOGIKA PERCEPATAN
+        runSpeed += acceleration; 
+        player.position.z -= runSpeed;
+        player.position.x += (targetX - player.position.x) * 0.15;
+
+        // Update UI Speed
+        document.getElementById('msgSpeed').innerText = "Speed: " + (runSpeed * 6).toFixed(1) + "x";
+
+        // ANIMASI ROBOT (KAKI & TANGAN)
+        clock += runSpeed * 3;
+        leftLeg.position.z = Math.sin(clock) * 0.4;
+        rightLeg.position.z = Math.sin(clock + Math.PI) * 0.4;
+        leftArm.rotation.x = Math.sin(clock + Math.PI) * 0.6;
+        rightArm.rotation.x = Math.sin(clock) * 0.6;
+
+        camera.position.set(0, 4, player.position.z + 8);
+        camera.lookAt(0, 1, player.position.z - 5);
+
+        obstacles.forEach(car => {
+            car.position.z += car.userData.moveSpeed; 
+            if (car.position.z > player.position.z + 10) {
+                car.position.z = player.position.z - 300;
+                car.position.x = lanes[Math.floor(Math.random()*3)];
+            }
+            const pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.8, 1.5, 0.8));
+            if (pBox.intersectsBox(new THREE.Box3().setFromObject(car))) { endGame(); }
+        });
+
+        coins.forEach(coin => {
+            coin.rotation.z += 0.05;
+            if (coin.position.z > player.position.z + 10) {
+                coin.position.z = player.position.z - 150;
+                coin.position.x = lanes[Math.floor(Math.random()*3)];
+                coin.visible = true;
+            }
+            if (coin.visible && player.position.distanceTo(coin.position) < 1.3) {
+                coin.visible = false;
+                score += 100;
+                document.getElementById('scoreText').innerText = "Score: " + score;
+            }
+        });
+
+        renderer.render(scene, camera);
+    }
+
+    function endGame() {
+        isGameOver = true;
+        if (score > highScore) localStorage.setItem("highScore_CityFinal", score);
+        document.getElementById('msgSpeed').innerHTML = "GAME OVER!<br>Tap layar untuk Restart";
+    }
+    animate();
+</script>
+</body>
+</html>
